@@ -108,13 +108,17 @@ WORKDIR /builder/sdk-src
 
 # Preselect the target and subtarget non-interactively: CONFIG_TARGET_<target>
 # selects the target, CONFIG_TARGET_<target>_<subtarget> the subtarget.
-RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\n' \
+# CONFIG_SDK=y is required for the top-level `make sdk` target to exist at
+# all — target/sdk is only in the build dirs when it is set (without it:
+# "No rule to make target 'sdk'", verified by reproduction).
+RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\n' \
         "${TARGET}" "${TARGET}" "${SUBTARGET}" > .config \
     && make defconfig
 
 # A bogus target would otherwise surface only as a missing tarball much later.
 RUN grep -qx "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" .config \
-    || { echo "target ${TARGET}/${SUBTARGET} does not exist in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }
+    && grep -qx "CONFIG_SDK=y" .config \
+    || { echo "target ${TARGET}/${SUBTARGET} or CONFIG_SDK not enabled in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }
 
 # The two ingredients of an SDK: host tools and the cross toolchain for the
 # target, both built for THIS host (aarch64). This is the long step — roughly
