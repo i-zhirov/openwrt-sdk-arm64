@@ -1,0 +1,49 @@
+name: Build aarch64-host SDK image
+
+# Builds and pushes the native aarch64-host OpenWrt SDK container (Dockerfile)
+# to GHCR. The image is built FROM SOURCE on a native arm64 runner
+# (`make sdk`) — no prebuilt aarch64-host SDK exists upstream, and no
+# emulation is involved here.
+#
+# The result is a drop-in replacement for the amd64 openwrt/sdk images:
+# ghcr.io/<owner>/sdk-arm64:<version>, run with the same docker run
+# interface gh-action-sdk uses against openwrt/sdk.
+#
+# NOTE: `ubuntu-24.04-arm` is the ARM64 hosted runner label (free for public
+# repositories). If it is unavailable on your plan, replace it with a
+# self-hosted arm64 runner tag.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: OpenWrt release to build the SDK from (25.12.5, 22.03.7)
+        required: false
+        default: '25.12.5'
+      target:
+        description: SDK target, slash form (x86/64, armsr/armv8, ...)
+        required: false
+        default: 'x86/64'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the SDK image
+        run: ./build.sh \
+          --version "${{ inputs.version }}" \
+          --target "${{ inputs.target }}" \
+          --push "ghcr.io/${{ github.repository_owner }}/sdk-arm64"

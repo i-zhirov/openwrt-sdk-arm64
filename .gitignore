@@ -1,0 +1,5 @@
+# Artifacts of the local smoke test (build.sh --smoke).
+/out/
+
+# Scratch builds.
+/build/
