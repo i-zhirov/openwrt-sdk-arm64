@@ -24,7 +24,7 @@
 #
 #   docker build --platform linux/arm64 \
 #     --build-arg OPENWRT_REF=v25.12.5 \
-#     -t sdk-arm64-25.12.5 .
+#     -t openwrt-sdk-arm64-25.12.5 .
 # ---------------------------------------------------------------------------
 
 # Ubuntu 24.04 (glibc 2.39, gcc-13). The base must be a glibc < 2.36-free

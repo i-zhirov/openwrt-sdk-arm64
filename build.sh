@@ -26,23 +26,23 @@ set -eu
 #   --target     SDK target, slash form "x86/64" or "armsr/armv8"
 #                (default x86/64 — the canonical target of the release builds).
 #   --subtarget  only used together with a slash-less --target.
-#   --tag        image tag (default sdk-arm64-<version>).
-#   --push       push to IMAGE:<version> (e.g. ghcr.io/me/sdk-arm64) instead
-#                of just building locally; requires a buildx and a login.
+#   --tag        image tag (default openwrt-sdk-arm64-<version>).
+#   --push       push to IMAGE:<version> (e.g. ghcr.io/me/openwrt-sdk-arm64)
+#                instead of just building locally; requires a buildx and a
+#                login.
 #   --no-kmods   skip the kernel preparation: smaller, faster image that
 #                cannot build kernel modules (fine for noarch packages).
 #   --allow-qemu build on a non-arm64 daemon anyway (requires binfmt+QEMU;
 #                the toolchain build then runs under emulation, hours).
 #   --smoke      after the build, run a real package build inside the image:
-#                mounts the CURRENT DIRECTORY (an OpenWrt feed repository,
-#                e.g. i-zhirov/trusttunnel-openwrt) as the feed and builds
-#                the package given with --package.
+#                mounts the CURRENT DIRECTORY (an OpenWrt feed repository)
+#                as the feed and builds the package given with --package.
 #   --package    package for the smoke test (required with --smoke).
 #
 # Examples:
-#   ./build.sh --version 25.12.5 --smoke --package luci-app-trusttunnel
-#   ./build.sh --version 22.03.7 --smoke --package luci-app-trusttunnel
-#   ./build.sh --version 25.12.5 --push ghcr.io/i-zhirov/sdk-arm64
+#   ./build.sh --version 25.12.5 --smoke --package urngd
+#   ./build.sh --version 22.03.7 --smoke --package urngd
+#   ./build.sh --version 25.12.5 --push ghcr.io/i-zhirov/openwrt-sdk-arm64
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 
@@ -84,7 +84,7 @@ elif [ "${TARGET#*/}" != "$TARGET" ]; then
     TARGET=${TARGET%/*}
 fi
 
-: "${TAG:=sdk-arm64-$VERSION}"
+: "${TAG:=openwrt-sdk-arm64-$VERSION}"
 OPENWRT_REF="v$VERSION"
 BUILD_KMODS_ARG=$BUILD_KMODS
 
@@ -170,7 +170,7 @@ if [ "$SMOKE" = 1 ]; then
     # NAME and arrive empty), the artifacts land in out/.
     docker run --rm \
         -e PACKAGES="$PKG" \
-        -e FEEDNAME=ttowrt \
+        -e FEEDNAME=myfeed \
         -v "$(pwd):/feed" \
         -v "$(pwd)/out:/artifacts" \
         "$IMG"

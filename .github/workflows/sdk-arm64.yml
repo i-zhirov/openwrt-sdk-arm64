@@ -6,7 +6,7 @@ name: Build aarch64-host SDK image
 # emulation is involved here.
 #
 # The result is a drop-in replacement for the amd64 openwrt/sdk images:
-# ghcr.io/<owner>/sdk-arm64:<version>, run with the same docker run
+# ghcr.io/<owner>/openwrt-sdk-arm64:<version>, run with the same docker run
 # interface gh-action-sdk uses against openwrt/sdk.
 #
 # NOTE: `ubuntu-24.04-arm` is the ARM64 hosted runner label (free for public
@@ -47,4 +47,4 @@ jobs:
           ./build.sh \
             --version "${{ inputs.version }}" \
             --target "${{ inputs.target }}" \
-            --push "ghcr.io/${{ github.repository_owner }}/sdk-arm64"
+            --push "ghcr.io/${{ github.repository_owner }}/openwrt-sdk-arm64"

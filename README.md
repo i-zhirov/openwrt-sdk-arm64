@@ -15,8 +15,8 @@ Published images (built on arm64 GitHub runners):
 
 | Image | OpenWrt | Package manager |
 |---|---|---|
-| `ghcr.io/i-zhirov/sdk-arm64:25.12.5` | 25.12.5 | apk |
-| `ghcr.io/i-zhirov/sdk-arm64:22.03.7` | 22.03.7 | opkg |
+| `ghcr.io/i-zhirov/openwrt-sdk-arm64:25.12.5` | 25.12.5 | apk |
+| `ghcr.io/i-zhirov/openwrt-sdk-arm64:22.03.7` | 22.03.7 | opkg |
 
 Every dispatch also pushes a target-specific tag,
 `<version>-<target>-<subtarget>` (e.g. `22.03.7-armvirt-64`,
@@ -86,14 +86,14 @@ The Dockerfile is multi-stage:
 ### Pull and run (the drop-in interface)
 
 ```sh
-docker pull ghcr.io/i-zhirov/sdk-arm64:25.12.5
+docker pull ghcr.io/i-zhirov/openwrt-sdk-arm64:25.12.5
 
 docker run --rm \
-  -e PACKAGES=luci-app-trusttunnel \
-  -e FEEDNAME=ttowrt \
+  -e PACKAGES=urngd \
+  -e FEEDNAME=myfeed \
   -v "$PWD:/feed" \
   -v "$PWD/out:/artifacts" \
-  ghcr.io/i-zhirov/sdk-arm64:25.12.5
+  ghcr.io/i-zhirov/openwrt-sdk-arm64:25.12.5
 ```
 
 The built packages land in `out/bin`. Requires an arm64 Docker daemon
@@ -103,10 +103,10 @@ amd64 daemon the image cannot run natively.
 ### Build an image locally
 
 ```sh
-./build.sh --version 25.12.5 --smoke --package luci-app-trusttunnel
+./build.sh --version 25.12.5 --smoke --package urngd
 ./build.sh --version 22.03.7
 ./build.sh --version 25.12.5 --target armsr/armv8
-./build.sh --version 25.12.5 --push ghcr.io/i-zhirov/sdk-arm64
+./build.sh --version 25.12.5 --push ghcr.io/i-zhirov/openwrt-sdk-arm64
 ```
 
 Options: `--version` (default 25.12.5), `--target x86/64` (default; any
@@ -124,7 +124,7 @@ gh workflow run sdk-arm64.yml -f version=25.12.5 -f target=armsr/armv8
 ```
 
 The workflow runs on a native arm64 runner (`ubuntu-24.04-arm`) and pushes
-the image to `ghcr.io/<owner>/sdk-arm64:<version>`.
+the image to `ghcr.io/<owner>/openwrt-sdk-arm64:<version>`.
 
 ## Targets
 
