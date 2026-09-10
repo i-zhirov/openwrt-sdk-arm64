@@ -43,7 +43,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push the SDK image
-        run: ./build.sh \
-          --version "${{ inputs.version }}" \
-          --target "${{ inputs.target }}" \
-          --push "ghcr.io/${{ github.repository_owner }}/sdk-arm64"
+        run: |
+          ./build.sh \
+            --version "${{ inputs.version }}" \
+            --target "${{ inputs.target }}" \
+            --push "ghcr.io/${{ github.repository_owner }}/sdk-arm64"
