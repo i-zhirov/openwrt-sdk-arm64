@@ -108,9 +108,8 @@ WORKDIR /builder/sdk-src
 
 # Preselect the target and subtarget non-interactively: CONFIG_TARGET_<target>
 # selects the target, CONFIG_TARGET_<target>_<subtarget> the subtarget.
-# CONFIG_SDK=y is required for the top-level `make sdk` target to exist at
-# all — target/sdk is only in the build dirs when it is set (without it:
-# "No rule to make target 'sdk'", verified by reproduction).
+# CONFIG_SDK=y puts target/sdk into the official build dirs (target/install
+# flow) and matches the buildbot's SDK config.
 RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\n' \
         "${TARGET}" "${TARGET}" "${SUBTARGET}" > .config \
     && make defconfig
@@ -131,7 +130,16 @@ RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/prepare -j"$(nproc)"; 
 # Produce the SDK tarball:
 #   bin/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.zst  (25.12+)
 #   bin/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.xz   (22.03)
-RUN make sdk
+#
+# NOTE: it is `target/sdk/compile`, NOT `make sdk`: the bare `sdk` alias no
+# longer exists in the OpenWrt tree (verified against v25.12.5 — the top-level
+# make fails with "No rule to make target 'sdk'"). The SDK is packed from
+# whatever the current tree has (staging_dir/host, the toolchain, the
+# prepared kernel), which is why the tools/toolchain/prepare steps above run
+# first. CONFIG_SDK=y (seeded above) makes target/sdk part of the official
+# `make target/install` flow and matches the buildbot's config; it is not
+# strictly required for the standalone compile target.
+RUN make target/sdk/compile
 
 # ---------------------------------------------------------------------------
 # Stage 2: the final image — the official layout, with the SDK baked in
