@@ -119,13 +119,18 @@ echo "== OpenWrt $VERSION, target $TARGET/$SUBTARGET -> $TAG"
 
 # --- Build -----------------------------------------------------------------
 if [ -n "$PUSH_IMAGE" ]; then
+    # Two tags: <image>:<version> (the "latest dispatch for this version"
+    # alias) and <image>:<version>-<target>-<subtarget> (the specific build,
+    # e.g. 22.03.7-armvirt-64). Without the second tag a later dispatch for
+    # a different target would silently overwrite the version tag.
     docker buildx build --platform linux/arm64 \
         --build-arg OPENWRT_REF="$OPENWRT_REF" \
         --build-arg TARGET="$TARGET" \
         --build-arg SUBTARGET="$SUBTARGET" \
         --build-arg BUILD_KMODS=$BUILD_KMODS_ARG \
-        --push -t "$PUSH_IMAGE:$VERSION" "$SCRIPT_DIR"
-    echo "pushed $PUSH_IMAGE:$VERSION"
+        --push -t "$PUSH_IMAGE:$VERSION" \
+        -t "$PUSH_IMAGE:$VERSION-$TARGET-$SUBTARGET" "$SCRIPT_DIR"
+    echo "pushed $PUSH_IMAGE:$VERSION (alias) and $PUSH_IMAGE:$VERSION-$TARGET-$SUBTARGET"
 else
     docker build --platform linux/arm64 \
         --build-arg OPENWRT_REF="$OPENWRT_REF" \

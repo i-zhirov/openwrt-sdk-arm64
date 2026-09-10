@@ -18,7 +18,12 @@ Published images (built on arm64 GitHub runners):
 | `ghcr.io/i-zhirov/sdk-arm64:25.12.5` | 25.12.5 | apk |
 | `ghcr.io/i-zhirov/sdk-arm64:22.03.7` | 22.03.7 | opkg |
 
-Any other version and target can be built on demand (see below).
+Every dispatch also pushes a target-specific tag,
+`<version>-<target>-<subtarget>` (e.g. `22.03.7-armvirt-64`,
+`25.12.5-x86-64`), so builds for different targets never overwrite each
+other; the bare version tag is an alias of the most recent dispatch for
+that version. Any other version and target can be built on demand (see
+below).
 
 ## Why this exists
 
