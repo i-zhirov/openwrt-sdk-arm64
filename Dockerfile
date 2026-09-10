@@ -27,12 +27,14 @@
 #     -t sdk-arm64-25.12.5 .
 # ---------------------------------------------------------------------------
 
-# Debian 12: still on LTS support (its apt repos are live), and its host
-# gcc-12 builds both the 22.03 and the 25.12 buildroots. The official buildbot
-# image uses Debian 11, but bullseye LTS ended 2026-08 and its repos moved to
-# archive.debian.org — a fresh apt-get there would fail. Pinned by digest for
+# Ubuntu 24.04 (glibc 2.39, gcc-13). The base must be a glibc < 2.36-free
+# host for OpenWrt's bundled tools: on Debian 12 (glibc 2.36, gcc-12)
+# tools/sed 4.9 fails to compile ('FLEXIBLE_ARRAY_MEMBER undeclared', verified
+# by reproduction) — the fix (sed 4.10) is not in the v25.12.5 tree. Ubuntu
+# 24.04 is also exactly what the arm64 GitHub runners run, so local and CI
+# builds see the same host. LTS until 2029. Pinned by digest for
 # reproducibility.
-ARG BASE_IMAGE=debian:bookworm@sha256:5eac3978974cfa26a880057766c683e55c5763355d30a8beecbd263e0e1621d9
+ARG BASE_IMAGE=ubuntu:24.04@sha256:ec0b1c9058e44c837a21c3f9d8a3d5e9aaa94ed28edceb18e154af5efecf0950
 
 # The OpenWrt source to build the SDK from: a release tag (v25.12.5, v22.03.7)
 # or a branch (openwrt-25.12, main). The SDK tarball is named from this
@@ -77,6 +79,13 @@ ENV BUILD_DEPS="build-essential ccache curl file flex bison gawk gettext git ca-
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
+
+# The builder runs as root (Docker default), and GNU tar 1.35's configure
+# refuses to run as root ("you should not run configure as root", verified by
+# reproduction). The official buildbot never hits this because it builds as
+# the buildbot user; for a root container build the bypass is documented by
+# the OpenWrt build guide.
+ENV FORCE_UNSAFE_CONFIGURE=1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ${BUILD_DEPS} \
@@ -132,6 +141,10 @@ ENV BUILD_DEPS="build-essential ccache curl file flex bison gawk gettext git ca-
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
+
+# Kept in the final stage too, so even a `docker run -u root` of the image
+# can build packages that run configure (tar-style root checks).
+ENV FORCE_UNSAFE_CONFIGURE=1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ${BUILD_DEPS} \
