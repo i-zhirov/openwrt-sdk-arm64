@@ -109,17 +109,18 @@ WORKDIR /builder/sdk-src
 # Preselect the target and subtarget non-interactively: CONFIG_TARGET_<target>
 # selects the target, CONFIG_TARGET_<target>_<subtarget> the subtarget.
 # CONFIG_SDK=y puts target/sdk into the official build dirs (target/install
-# flow) and matches the buildbot's SDK config; CONFIG_VERSION_FILENAMES=y
-# keeps the official file naming (openwrt-sdk-<version>-<target>_...).
-RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\nCONFIG_VERSION_FILENAMES=y\n' \
+# flow) and matches the buildbot's SDK config. (CONFIG_VERSION_FILENAMES,
+# which the official SDK names carry, is a menuconfig-only symbol and cannot
+# be seeded via defconfig — the tarball name then simply omits the version,
+# which the COPY glob below tolerates.)
+RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\n' \
         "${TARGET}" "${TARGET}" "${SUBTARGET}" > .config \
     && make defconfig
 
 # A bogus target would otherwise surface only as a missing tarball much later.
 RUN grep -qx "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" .config \
     && grep -qx "CONFIG_SDK=y" .config \
-    && grep -qx "CONFIG_VERSION_FILENAMES=y" .config \
-    || { echo "target ${TARGET}/${SUBTARGET} or CONFIG_SDK/CONFIG_VERSION_FILENAMES not enabled in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }
+    || { echo "target ${TARGET}/${SUBTARGET} or CONFIG_SDK not enabled in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }
 
 # The two ingredients of an SDK: host tools and the cross toolchain for the
 # target, both built for THIS host (aarch64). This is the long step — roughly
