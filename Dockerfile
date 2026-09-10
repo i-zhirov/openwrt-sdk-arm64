@@ -152,8 +152,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # uid 1000 is the contract with gh-action-sdk: the action chowns the mounted
-# /feed and /artifacts to 1000:1000 before starting the container.
-RUN useradd --create-home --uid 1000 --shell /bin/bash buildbot
+# /feed and /artifacts to 1000:1000 before starting the container. Ubuntu's
+# base image already owns uid 1000 (the 'ubuntu' user), so free it first.
+RUN userdel -r ubuntu \
+    && useradd --create-home --uid 1000 --shell /bin/bash buildbot
 
 COPY --from=sdk-builder /builder/sdk-src/bin/openwrt-sdk-*.tar.* /tmp/sdk/
 COPY --from=sdk-builder /builder/action/entrypoint.sh /entrypoint.sh
