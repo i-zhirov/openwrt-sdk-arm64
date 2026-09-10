@@ -109,15 +109,17 @@ WORKDIR /builder/sdk-src
 # Preselect the target and subtarget non-interactively: CONFIG_TARGET_<target>
 # selects the target, CONFIG_TARGET_<target>_<subtarget> the subtarget.
 # CONFIG_SDK=y puts target/sdk into the official build dirs (target/install
-# flow) and matches the buildbot's SDK config.
-RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\n' \
+# flow) and matches the buildbot's SDK config; CONFIG_VERSION_FILENAMES=y
+# keeps the official file naming (openwrt-sdk-<version>-<target>_...).
+RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\nCONFIG_VERSION_FILENAMES=y\n' \
         "${TARGET}" "${TARGET}" "${SUBTARGET}" > .config \
     && make defconfig
 
 # A bogus target would otherwise surface only as a missing tarball much later.
 RUN grep -qx "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" .config \
     && grep -qx "CONFIG_SDK=y" .config \
-    || { echo "target ${TARGET}/${SUBTARGET} or CONFIG_SDK not enabled in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }
+    && grep -qx "CONFIG_VERSION_FILENAMES=y" .config \
+    || { echo "target ${TARGET}/${SUBTARGET} or CONFIG_SDK/CONFIG_VERSION_FILENAMES not enabled in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }
 
 # The two ingredients of an SDK: host tools and the cross toolchain for the
 # target, both built for THIS host (aarch64). This is the long step — roughly
@@ -128,8 +130,10 @@ RUN make tools/install toolchain/install -j"$(nproc)"
 RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/prepare -j"$(nproc)"; fi
 
 # Produce the SDK tarball:
-#   bin/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.zst  (25.12+)
-#   bin/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.xz   (22.03)
+#   bin/targets/<board>/<subtarget>/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.zst  (25.12+)
+#   bin/targets/<board>/<subtarget>/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.xz   (22.03)
+# BIN_DIR is bin/targets/<board>/<subtarget> (rules.mk), hence the nested
+# path in the COPY below.
 #
 # NOTE: it is `target/sdk/compile`, NOT `make sdk`: the bare `sdk` alias no
 # longer exists in the OpenWrt tree (verified against v25.12.5 — the top-level
@@ -169,7 +173,7 @@ RUN apt-get update \
 RUN userdel -r ubuntu \
     && useradd --create-home --uid 1000 --shell /bin/bash buildbot
 
-COPY --from=sdk-builder /builder/sdk-src/bin/openwrt-sdk-*.tar.* /tmp/sdk/
+COPY --from=sdk-builder /builder/sdk-src/bin/targets/*/*/openwrt-sdk-*.tar.* /tmp/sdk/
 COPY --from=sdk-builder /builder/action/entrypoint.sh /entrypoint.sh
 
 # The SDK IS the /builder working directory, exactly like the official images
