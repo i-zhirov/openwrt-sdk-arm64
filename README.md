@@ -114,7 +114,7 @@ the SDK action does). `./build.sh --help` for details.
 
 ```sh
 gh workflow run sdk-arm64.yml -f version=25.12.5
-gh workflow run sdk-arm64.yml -f version=22.03.7 -f target=aarch64/generic
+gh workflow run sdk-arm64.yml -f version=22.03.7 -f target=armvirt/64
 gh workflow run sdk-arm64.yml -f version=25.12.5 -f target=armsr/armv8
 ```
 
@@ -126,10 +126,11 @@ the image to `ghcr.io/<owner>/sdk-arm64:<version>`.
 The SDK's target is only the architecture it cross-compiles *for*; for
 noarch packages any target works and only affects the toolchain build time.
 The default `x86/64` matches the canonical OpenWrt release builds. Note the
-target naming changed between generations: the aarch64 target is
-`aarch64/generic` on 22.03 and `armsr/armv8` on 25.12. A target that does not
-exist in the chosen OpenWrt version fails fast with a clear error from the
-defconfig assertion.
+target naming changed between generations: the generic aarch64 target is
+`armvirt/64` on 22.03 (its arch label is `aarch64_generic` — the same SDK
+the official `aarch64_generic-22.03.7` image tag refers to) and `armsr/armv8`
+on 25.12. A target that does not exist in the chosen OpenWrt version fails
+fast with a clear error from the defconfig assertion.
 
 ## Files
 
