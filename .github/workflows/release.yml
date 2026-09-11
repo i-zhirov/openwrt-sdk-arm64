@@ -45,8 +45,12 @@ on:
         default: false
 
 permissions:
+  # actions: write is required for the dispatch-all job: GITHUB_TOKEN can
+  # create workflow_dispatch events only with that permission (HTTP 403
+  # "Resource not accessible by integration" without it, verified).
   contents: read
   packages: write
+  actions: write
 
 jobs:
   dispatch-all:
