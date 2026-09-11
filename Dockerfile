@@ -116,24 +116,34 @@ WORKDIR /builder/sdk-src
 #
 # mkdir -p tmp: the target kconfig fragments (tmp/.kconfig-*) are written by
 # make rules that do not create tmp/ themselves; in a fresh clone their
-# writes can fail and conf then silently DROPS the target's symbols
-# (intermittent — seen on CI: defconfig "succeeded" but
-# CONFIG_TARGET_<t>_<s> was gone). The assertion below would then fail.
+# writes can fail, which would silently drop target configuration.
 RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\n' \
         "${TARGET}" "${TARGET}" "${SUBTARGET}" > .config \
     && mkdir -p tmp \
     && make defconfig
 
-# A bogus target would otherwise surface only as a missing tarball much later.
+# The target must be selected after defconfig. NOTE: single-subtarget
+# targets (no SUBTARGETS:= in their Makefile — ath25, gemini, kirkwood,
+# mxs, omap, octeontx, pistachio, tegra, zynq in 22.03) have NO
+# <board>_<subtarget> kconfig symbol at all: scripts/target-metadata.pl
+# emits only "config TARGET_<board>" for them. The seeded <board>_generic
+# line is bogus for those and conf drops it, so for subtarget "generic" the
+# board symbol alone is the proof of selection (verified against the 22.03.7
+# tree: exactly the 9 single-subtarget targets failed CI).
+#
 # The retry covers any residual config-generation race: a second defconfig
 # pass is cheap and re-generates the fragments.
-RUN grep -qx "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" .config \
-    && grep -qx "CONFIG_SDK=y" .config \
-    || { echo "config assertion failed — re-running defconfig" >&2; \
-         mkdir -p tmp && make defconfig >/dev/null 2>&1; \
-         grep -qx "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" .config \
-         && grep -qx "CONFIG_SDK=y" .config \
-         || { echo "target ${TARGET}/${SUBTARGET} or CONFIG_SDK not enabled in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }; }
+RUN assert_target() { \
+        grep -qx "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" .config \
+        || { [ "${SUBTARGET}" = "generic" ] \
+             && grep -qx "CONFIG_TARGET_${TARGET}=y" .config; }; \
+    }; \
+    if ! { assert_target && grep -qx "CONFIG_SDK=y" .config; }; then \
+        echo "config assertion failed — re-running defconfig" >&2; \
+        mkdir -p tmp && make defconfig >/dev/null 2>&1; \
+    fi; \
+    assert_target && grep -qx "CONFIG_SDK=y" .config \
+    || { echo "target ${TARGET}/${SUBTARGET} or CONFIG_SDK not enabled in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }
 
 # The two ingredients of an SDK: host tools and the cross toolchain for the
 # target, both built for THIS host (aarch64). This is the long step — roughly
