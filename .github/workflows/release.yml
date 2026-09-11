@@ -58,7 +58,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           for v in 25.12.5 24.10.8 23.05.6 22.03.7; do
-            gh workflow run release.yml -f version="$v" \
+            # -R: this job has no checkout, and gh needs the repo to resolve
+            # the workflow (it otherwise fails with "not a git repository")
+            gh workflow run release.yml -R "$GITHUB_REPOSITORY" -f version="$v" \
               ${{ inputs.target != '' && format('-f target={0}', inputs.target) || '' }} \
               -f force=${{ inputs.force }}
           done
