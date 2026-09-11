@@ -39,7 +39,10 @@ git clone --depth 1 --branch "v$VERSION" \
     https://github.com/openwrt/openwrt.git "$TMP/openwrt" 2>/dev/null
 
 cd "$TMP/openwrt"
-perl scripts/dump-target-info.pl targets > "$TMP/rows.txt"
+# 2>/dev/null silences the make chatter (missing tmp/ dir in a fresh clone,
+# CPU_TYPE warnings) that the DUMP invocations produce — the official
+# openwrt/docker workflow does the same; the target data is unaffected.
+perl scripts/dump-target-info.pl targets 2>/dev/null > "$TMP/rows.txt"
 
 python3 - "$VERSION" "$FILTER" "$TMP/rows.txt" <<'EOF'
 import json, sys
@@ -63,5 +66,7 @@ if not rows:
           + (f" matching filter '{filt}'" if filt else ""), file=sys.stderr)
     sys.exit(1)
 
-print(json.dumps({"include": rows}, indent=2))
+# Compact (single-line) JSON: the workflows write it to GITHUB_OUTPUT, which
+# rejects multiline values.
+print(json.dumps({"include": rows}))
 EOF
