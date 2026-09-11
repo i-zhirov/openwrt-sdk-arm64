@@ -55,9 +55,26 @@ jobs:
             >> "$GITHUB_OUTPUT"
 
       - name: Build and push the SDK image
+        shell: bash
         run: |
-          ./build.sh \
-            --version "${{ inputs.version }}" \
-            --target "${{ inputs.target }}" \
-            --arch-label "${{ steps.matrix.outputs.arch_alias }}" \
-            --push "ghcr.io/${{ github.repository_owner }}/openwrt-sdk-arm64"
+          # Transient registry failures (BuildKit "unknown blob" at the push
+          # stage) are retried; the buildx layer cache makes the retry cheap.
+          set -o pipefail
+          for attempt in 1 2 3; do
+            if ./build.sh \
+                --version "${{ inputs.version }}" \
+                --target "${{ inputs.target }}" \
+                --arch-label "${{ steps.matrix.outputs.arch_alias }}" \
+                --push "ghcr.io/${{ github.repository_owner }}/openwrt-sdk-arm64" \
+                2>&1 | tee /tmp/build.log; then
+              exit 0
+            fi
+            if ! grep -q "unknown blob" /tmp/build.log; then
+              echo "::error::build failed (non-transient error)"
+              exit 1
+            fi
+            echo "::warning::transient registry error, retrying (attempt $attempt/3)"
+            sleep 10
+          done
+          echo "::error::still failing after 3 attempts"
+          exit 1
