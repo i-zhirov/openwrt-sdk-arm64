@@ -113,14 +113,27 @@ WORKDIR /builder/sdk-src
 # which the official SDK names carry, is a menuconfig-only symbol and cannot
 # be seeded via defconfig — the tarball name then simply omits the version,
 # which the COPY glob below tolerates.)
+#
+# mkdir -p tmp: the target kconfig fragments (tmp/.kconfig-*) are written by
+# make rules that do not create tmp/ themselves; in a fresh clone their
+# writes can fail and conf then silently DROPS the target's symbols
+# (intermittent — seen on CI: defconfig "succeeded" but
+# CONFIG_TARGET_<t>_<s> was gone). The assertion below would then fail.
 RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\n' \
         "${TARGET}" "${TARGET}" "${SUBTARGET}" > .config \
+    && mkdir -p tmp \
     && make defconfig
 
 # A bogus target would otherwise surface only as a missing tarball much later.
+# The retry covers any residual config-generation race: a second defconfig
+# pass is cheap and re-generates the fragments.
 RUN grep -qx "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" .config \
     && grep -qx "CONFIG_SDK=y" .config \
-    || { echo "target ${TARGET}/${SUBTARGET} or CONFIG_SDK not enabled in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }
+    || { echo "config assertion failed — re-running defconfig" >&2; \
+         mkdir -p tmp && make defconfig >/dev/null 2>&1; \
+         grep -qx "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" .config \
+         && grep -qx "CONFIG_SDK=y" .config \
+         || { echo "target ${TARGET}/${SUBTARGET} or CONFIG_SDK not enabled in OpenWrt ${OPENWRT_REF}" >&2; exit 1; }; }
 
 # The two ingredients of an SDK: host tools and the cross toolchain for the
 # target, both built for THIS host (aarch64). This is the long step — roughly
