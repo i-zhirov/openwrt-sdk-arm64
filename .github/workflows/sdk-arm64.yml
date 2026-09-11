@@ -1,13 +1,13 @@
 name: Build aarch64-host SDK image
 
-# Builds and pushes the native aarch64-host OpenWrt SDK container (Dockerfile)
-# to GHCR. The image is built FROM SOURCE on a native arm64 runner
-# (`make sdk`) — no prebuilt aarch64-host SDK exists upstream, and no
-# emulation is involved here.
+# Single-build dev workflow: dispatches one image for one version/target,
+# tagged with the official openwrt/sdk naming (the arch alias is computed
+# from the OpenWrt tree via scripts/generate-matrix.sh):
+#   ghcr.io/<owner>/openwrt-sdk-arm64:<target>-<subtarget>-<version>
+#   ghcr.io/<owner>/openwrt-sdk-arm64:<arch>-<version>   (first row per arch)
+#   ghcr.io/<owner>/openwrt-sdk-arm64:<version>          (convenience alias)
 #
-# The result is a drop-in replacement for the amd64 openwrt/sdk images:
-# ghcr.io/<owner>/openwrt-sdk-arm64:<version>, run with the same docker run
-# interface gh-action-sdk uses against openwrt/sdk.
+# For the full versions x targets matrix use release.yml.
 #
 # NOTE: `ubuntu-24.04-arm` is the ARM64 hosted runner label (free for public
 # repositories). If it is unavailable on your plan, replace it with a
@@ -42,9 +42,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute the arch label from the OpenWrt tree
+        id: matrix
+        run: |
+          command -v make >/dev/null || {
+            sudo apt-get update -qq && sudo apt-get install -y -qq make
+          }
+          ./scripts/generate-matrix.sh "${{ inputs.version }}" "${{ inputs.target }}" \
+            > matrix.json
+          echo "arch_alias=$(python3 -c \
+            'import json; print(json.load(open("matrix.json"))["include"][0]["arch_alias"])')" \
+            >> "$GITHUB_OUTPUT"
+
       - name: Build and push the SDK image
         run: |
           ./build.sh \
             --version "${{ inputs.version }}" \
             --target "${{ inputs.target }}" \
+            --arch-label "${{ steps.matrix.outputs.arch_alias }}" \
             --push "ghcr.io/${{ github.repository_owner }}/openwrt-sdk-arm64"

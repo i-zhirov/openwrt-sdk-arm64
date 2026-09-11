@@ -1,0 +1,94 @@
+name: Release SDK images
+
+# Builds and pushes the native aarch64-host OpenWrt SDK containers for the
+# full versions x targets matrix, mirroring the official openwrt/sdk naming:
+# every (target, subtarget) row of the chosen OpenWrt release gets
+#   ghcr.io/<owner>/openwrt-sdk-arm64:<target>-<subtarget>-<version>
+# the first target of each arch additionally gets the arch alias
+#   ghcr.io/<owner>/openwrt-sdk-arm64:<arch>-<version>
+# and every build also gets the <version> convenience alias (our own, not
+# official — the "latest dispatch" for that version).
+#
+# The matrix is generated from the OpenWrt source tree itself with
+# scripts/dump-target-info.pl (the same script the official openwrt/docker
+# workflow uses), so it always matches the version exactly — including the
+# automatic exclusion of 'broken'/'source-only' targets.
+#
+# One workflow run builds ONE version: GitHub caps a run at 256 jobs, and the
+# four supported versions total ~340 matrix rows, so the 'all' input
+# re-dispatches this workflow once per version.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          OpenWrt release to build (25.12.5, 24.10.8, 23.05.6, 22.03.7)
+          or "all" for every supported release
+        required: false
+        default: 'all'
+      target:
+        description: >-
+          Optional target filter, comma-separated exact "target/subtarget"
+          pairs (e.g. "x86/64,armsr/armv8"); useful for a test run
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  dispatch-all:
+    if: inputs.version == 'all'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch one run per version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for v in 25.12.5 24.10.8 23.05.6 22.03.7; do
+            gh workflow run release.yml -f version="$v" \
+              ${{ inputs.target != '' && format('-f target={0}', inputs.target) || '' }}
+          done
+
+  generate-matrix:
+    if: inputs.version != 'all'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Generate the target matrix
+        id: matrix
+        run: |
+          command -v make >/dev/null || {
+            sudo apt-get update -qq && sudo apt-get install -y -qq make
+          }
+          ./scripts/generate-matrix.sh "${{ inputs.version }}" "${{ inputs.target }}" \
+            > matrix.json
+          echo "matrix=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: generate-matrix
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the SDK image
+        run: |
+          ./build.sh \
+            --version "${{ matrix.version }}" \
+            --target "${{ matrix.target }}/${{ matrix.subtarget }}" \
+            --arch-label "${{ matrix.arch_alias }}" \
+            --push "ghcr.io/${{ github.repository_owner }}/openwrt-sdk-arm64"

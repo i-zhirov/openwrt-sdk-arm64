@@ -18,18 +18,25 @@ set -eu
 #
 # Usage:
 #   ./build.sh [--version 25.12.5] [--target x86/64] [--subtarget 64]
-#       [--tag NAME] [--push IMAGE] [--no-kmods] [--allow-qemu]
-#       [--smoke] [--package PKG]
+#       [--tag NAME] [--push IMAGE] [--arch-label ARCH] [--no-kmods]
+#       [--allow-qemu] [--smoke] [--package PKG]
 #
 #   --version    OpenWrt release to build the SDK from (default 25.12.5;
 #                22.03.7 is the opkg-generation counterpart).
 #   --target     SDK target, slash form "x86/64" or "armsr/armv8"
 #                (default x86/64 — the canonical target of the release builds).
 #   --subtarget  only used together with a slash-less --target.
-#   --tag        image tag (default openwrt-sdk-arm64-<version>).
-#   --push       push to IMAGE:<version> (e.g. ghcr.io/me/openwrt-sdk-arm64)
-#                instead of just building locally; requires a buildx and a
-#                login.
+#   --tag        local image tag (default openwrt-sdk-arm64-<version>).
+#   --push       push to IMAGE instead of just building locally (requires a
+#                buildx and a login). The pushed tags mirror the official
+#                openwrt/sdk naming:
+#                  IMAGE:<target>-<subtarget>-<version>   (per-row tag)
+#                  IMAGE:<arch>-<version>                 (arch alias; only
+#                    when --arch-label is given — the first target of an arch)
+#                  IMAGE:<version>                        (our "latest
+#                    dispatch" convenience alias, not official)
+#   --arch-label the arch label of this target (e.g. aarch64_generic,
+#                x86_64); enables the official <arch>-<version> tag.
 #   --no-kmods   skip the kernel preparation: smaller, faster image that
 #                cannot build kernel modules (fine for noarch packages).
 #   --allow-qemu build on a non-arm64 daemon anyway (requires binfmt+QEMU;
@@ -42,7 +49,8 @@ set -eu
 # Examples:
 #   ./build.sh --version 25.12.5 --smoke --package urngd
 #   ./build.sh --version 22.03.7 --smoke --package urngd
-#   ./build.sh --version 25.12.5 --push ghcr.io/i-zhirov/openwrt-sdk-arm64
+#   ./build.sh --version 25.12.5 --target armsr/armv8 \
+#     --arch-label aarch64_generic --push ghcr.io/i-zhirov/openwrt-sdk-arm64
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 
@@ -51,13 +59,14 @@ TARGET=""
 SUBTARGET=64
 TAG=""
 PUSH_IMAGE=""
+ARCH_LABEL=""
 BUILD_KMODS=1
 ALLOW_QEMU=0
 SMOKE=0
 PKG=""
 
 usage() {
-    sed -n '4,46p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '4,58p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -67,6 +76,7 @@ while [ $# -gt 0 ]; do
         --subtarget) SUBTARGET=$2; shift 2 ;;
         --tag)       TAG=$2; shift 2 ;;
         --push)      PUSH_IMAGE=$2; shift 2 ;;
+        --arch-label) ARCH_LABEL=$2; shift 2 ;;
         --no-kmods)  BUILD_KMODS=0; shift ;;
         --allow-qemu) ALLOW_QEMU=1; shift ;;
         --smoke)     SMOKE=1; shift ;;
@@ -119,18 +129,23 @@ echo "== OpenWrt $VERSION, target $TARGET/$SUBTARGET -> $TAG"
 
 # --- Build -----------------------------------------------------------------
 if [ -n "$PUSH_IMAGE" ]; then
-    # Two tags: <image>:<version> (the "latest dispatch for this version"
-    # alias) and <image>:<version>-<target>-<subtarget> (the specific build,
-    # e.g. 22.03.7-armvirt-64). Without the second tag a later dispatch for
-    # a different target would silently overwrite the version tag.
+    # Official openwrt/sdk naming: the per-row tag <target>-<subtarget>-<version>,
+    # the arch alias <arch>-<version> (only for the first target of an arch),
+    # and our <version> convenience alias ("latest dispatch", not official).
+    TAGS="-t $PUSH_IMAGE:$TARGET-$SUBTARGET-$VERSION"
+    if [ -n "$ARCH_LABEL" ]; then
+        TAGS="$TAGS -t $PUSH_IMAGE:$ARCH_LABEL-$VERSION"
+    fi
+    # shellcheck disable=SC2086
     docker buildx build --platform linux/arm64 \
         --build-arg OPENWRT_REF="$OPENWRT_REF" \
         --build-arg TARGET="$TARGET" \
         --build-arg SUBTARGET="$SUBTARGET" \
         --build-arg BUILD_KMODS=$BUILD_KMODS_ARG \
-        --push -t "$PUSH_IMAGE:$VERSION" \
-        -t "$PUSH_IMAGE:$VERSION-$TARGET-$SUBTARGET" "$SCRIPT_DIR"
-    echo "pushed $PUSH_IMAGE:$VERSION (alias) and $PUSH_IMAGE:$VERSION-$TARGET-$SUBTARGET"
+        --push $TAGS -t "$PUSH_IMAGE:$VERSION" "$SCRIPT_DIR"
+    echo "pushed $PUSH_IMAGE:$TARGET-$SUBTARGET-$VERSION" \
+        ${ARCH_LABEL:+and $PUSH_IMAGE:$ARCH_LABEL-$VERSION} \
+        "and $PUSH_IMAGE:$VERSION (alias)"
 else
     docker build --platform linux/arm64 \
         --build-arg OPENWRT_REF="$OPENWRT_REF" \

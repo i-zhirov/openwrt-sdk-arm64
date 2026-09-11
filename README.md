@@ -18,12 +18,18 @@ Published images (built on arm64 GitHub runners):
 | `ghcr.io/i-zhirov/openwrt-sdk-arm64:25.12.5` | 25.12.5 | apk |
 | `ghcr.io/i-zhirov/openwrt-sdk-arm64:22.03.7` | 22.03.7 | opkg |
 
-Every dispatch also pushes a target-specific tag,
-`<version>-<target>-<subtarget>` (e.g. `22.03.7-armvirt-64`,
-`25.12.5-x86-64`), so builds for different targets never overwrite each
-other; the bare version tag is an alias of the most recent dispatch for
-that version. Any other version and target can be built on demand (see
-below).
+Every build is tagged with the **official openwrt/sdk naming**:
+
+- `<target>-<subtarget>-<version>` — the per-row tag (`x86-64-25.12.5`,
+  `armsr-armv8-25.12.5`, `armvirt-64-22.03.7`);
+- `<arch>-<version>` — the arch alias (`x86_64-25.12.5`,
+  `aarch64_generic-25.12.5`), pushed by the first target of each arch;
+- `<version>` — our own convenience alias ("the latest dispatch for this
+  version"), **not** part of the official scheme.
+
+The release workflow covers the full matrix — every (target, subtarget) of
+the supported OpenWrt releases (22.03.7, 23.05.6, 24.10.8, 25.12.5),
+mirroring the official `openwrt/sdk` coverage.
 
 ## Why this exists
 
@@ -117,14 +123,30 @@ the SDK action does). `./build.sh --help` for details.
 
 ### Build on GitHub Actions (no local arm64 daemon needed)
 
+The full versions x targets matrix:
+
+```sh
+gh workflow run release.yml -f version=all              # 22.03.7 + 23.05.6 + 24.10.8 + 25.12.5
+gh workflow run release.yml -f version=25.12.5          # one version, every target
+gh workflow run release.yml -f version=25.12.5 \
+  -f target=x86/64,armsr/armv8                          # test run, target filter
+```
+
+A single build (dev iteration):
+
 ```sh
 gh workflow run sdk-arm64.yml -f version=25.12.5
 gh workflow run sdk-arm64.yml -f version=22.03.7 -f target=armvirt/64
 gh workflow run sdk-arm64.yml -f version=25.12.5 -f target=armsr/armv8
 ```
 
-The workflow runs on a native arm64 runner (`ubuntu-24.04-arm`) and pushes
-the image to `ghcr.io/<owner>/openwrt-sdk-arm64:<version>`.
+The matrix is generated from the OpenWrt source tree itself
+(`scripts/generate-matrix.sh`, using the same `scripts/dump-target-info.pl`
+the official openwrt/docker workflow uses), so it always matches the version
+exactly. The workflows run on native arm64 runners (`ubuntu-24.04-arm`) and
+push to `ghcr.io/<owner>/openwrt-sdk-arm64`. One workflow run builds ONE
+version (GitHub caps a run at 256 jobs; `version=all` re-dispatches one run
+per version).
 
 ## Targets
 
@@ -141,8 +163,11 @@ fast with a clear error from the defconfig assertion.
 
 - `Dockerfile` — the multi-stage build (see "How it works").
 - `build.sh` — local build script: preflight (arm64 daemon check), build or
-  `--push`, optional `--smoke` package build.
-- `.github/workflows/sdk-arm64.yml` — dispatch workflow for arm64 runners.
+  `--push` with the official tag scheme, optional `--smoke` package build.
+- `scripts/generate-matrix.sh` — generates the versions x targets matrix
+  from the OpenWrt tree (used by the workflows).
+- `.github/workflows/release.yml` — the full-matrix release workflow.
+- `.github/workflows/sdk-arm64.yml` — single-build dev workflow.
 
 ## Requirements
 
