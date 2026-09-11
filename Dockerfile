@@ -75,7 +75,7 @@ ARG ACTION_REF
 # needs at runtime: it compiles packages against the included toolchain).
 # An ENV, not an ARG: multi-word values in ARG defaults are parsed
 # unreliably, and the set is not meant to be overridden.
-ENV BUILD_DEPS="build-essential ccache curl file flex bison gawk gettext git ca-certificates libncurses-dev libssl-dev python3 python3-setuptools rsync subversion swig unzip wget xz-utils zstd time locales zlib1g-dev"
+ENV BUILD_DEPS="build-essential ccache curl file flex bison gawk gettext git ca-certificates libncurses-dev libssl-dev python3 python3-setuptools python3-pyelftools python3-cryptography rsync subversion swig unzip wget xz-utils zstd time locales zlib1g-dev"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
@@ -154,7 +154,7 @@ FROM --platform=linux/arm64 ${BASE_IMAGE}
 ARG OPENWRT_REF
 ARG TARGET
 ARG SUBTARGET
-ENV BUILD_DEPS="build-essential ccache curl file flex bison gawk gettext git ca-certificates libncurses-dev libssl-dev python3 python3-setuptools rsync subversion swig unzip wget xz-utils zstd time locales zlib1g-dev"
+ENV BUILD_DEPS="build-essential ccache curl file flex bison gawk gettext git ca-certificates libncurses-dev libssl-dev python3 python3-setuptools python3-pyelftools python3-cryptography rsync subversion swig unzip wget xz-utils zstd time locales zlib1g-dev"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
