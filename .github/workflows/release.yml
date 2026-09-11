@@ -14,6 +14,11 @@ name: Release SDK images
 # workflow uses), so it always matches the version exactly — including the
 # automatic exclusion of 'broken'/'source-only' targets.
 #
+# Idempotency: rows whose <target>-<subtarget>-<version> tag already exists
+# on the registry are skipped, so an already-built version is not built over
+# again (the per-row tag is the proof of a complete build). Set the force
+# input to rebuild everything anyway (e.g. after a recipe change).
+#
 # One workflow run builds ONE version: GitHub caps a run at 256 jobs, and the
 # four supported versions total ~340 matrix rows, so the 'all' input
 # re-dispatches this workflow once per version.
@@ -32,6 +37,12 @@ on:
           Optional target filter, comma-separated exact "target/subtarget"
           pairs (e.g. "x86/64,armsr/armv8"); useful for a test run
         required: false
+      force:
+        description: >-
+          Rebuild rows even if their tag already exists on the registry
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,7 +59,8 @@ jobs:
         run: |
           for v in 25.12.5 24.10.8 23.05.6 22.03.7; do
             gh workflow run release.yml -f version="$v" \
-              ${{ inputs.target != '' && format('-f target={0}', inputs.target) || '' }}
+              ${{ inputs.target != '' && format('-f target={0}', inputs.target) || '' }} \
+              -f force=${{ inputs.force }}
           done
 
   generate-matrix:
@@ -66,11 +78,16 @@ jobs:
             sudo apt-get update -qq && sudo apt-get install -y -qq make
           }
           ./scripts/generate-matrix.sh "${{ inputs.version }}" "${{ inputs.target }}" \
+            --image "ghcr.io/${{ github.repository_owner }}/openwrt-sdk-arm64" \
+            ${{ inputs.force && '--force' || '' }} \
             > matrix.json
           echo "matrix=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
 
   build:
     needs: generate-matrix
+    if: >-
+      needs.generate-matrix.result == 'success'
+      && fromJson(needs.generate-matrix.outputs.matrix).include[0] != null
     runs-on: ubuntu-24.04-arm
     strategy:
       fail-fast: false
