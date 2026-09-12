@@ -31,6 +31,13 @@ The release workflow covers the full matrix — every (target, subtarget) of
 the supported OpenWrt releases (22.03.7, 23.05.6, 24.10.8, 25.12.5),
 mirroring the official `openwrt/sdk` coverage.
 
+> **On an x86_64 host, use the official `openwrt/sdk` images instead.** They
+> run natively on amd64, cover the same matrix (all targets, all versions,
+> rebuilt weekly by the OpenWrt project), and their toolchain is built by
+> the official buildbot. These images exist only because no aarch64-host
+> SDK is published anywhere — if your host is x86_64, this repository adds
+> nothing over the official containers.
+
 ## Why this exists
 
 Upstream OpenWrt publishes SDKs for **Linux x86_64 hosts only**:
