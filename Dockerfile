@@ -201,6 +201,17 @@ RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/prepare -j"$(nproc)"; 
 # already satisfied at this point.
 RUN if [ "${BUILD_KMODS}" = "1" ]; then make kernel_oldconfig -j"$(nproc)"; fi
 
+# Compile the kernel: the SDK tarball whitelists the kernel BUILD OUTPUT
+# (modules.builtin, Module.symvers, the compiled *.ko modules — the
+# target/sdk KERNEL_FILES list), and the kernel package compile in the
+# SDK dies on their absence ("install: cannot stat
+# .../linux-*/.config/modules.builtin", verified against the 25.12.5
+# image). The official SDK images ship them from the buildbot's full
+# build; this recipe only prepared and configured the sources, so the
+# kernel is compiled here (the image itself is not whitelisted into the
+# tarball, so only the headers/module artifacts ride along).
+RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/compile -j"$(nproc)"; fi
+
 # Produce the SDK tarball:
 #   bin/targets/<board>/<subtarget>/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.zst  (25.12+)
 #   bin/targets/<board>/<subtarget>/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.xz   (22.03)
