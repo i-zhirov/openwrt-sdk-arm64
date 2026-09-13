@@ -158,13 +158,20 @@ RUN make tools/install toolchain/install -j"$(nproc)"
 # assemble ANY package ("fakeroot: /builder/staging_dir/host/bin/apk: No such
 # file or directory", verified against the 25.12.5 image). The tree carries
 # package/system/apk only on the apk-based releases; the opkg releases
-# (22.03) skip this. The lua host dependency resolves from the tree. V=s:
-# the SDK build wraps failing commands in the build-log machinery that hides
-# the real error, so the verbose mode and a build-log dump are kept for
-# diagnosis.
+# (22.03) skip this.
+#
+# NOTE the target form: package targets are keyed by the LAST PATH COMPONENT
+# (like `make package/busybox/compile`), so it is package/apk/..., not
+# package/system/apk/... — the path form does not resolve ("No rule", and the
+# SDK's catch-all swallows the reason). host/compile is the rule the build
+# system itself depends on; it pulls in the lua host dependency (the
+# packagedeps line `$(curdir)/system/apk/host/compile +=
+# $(curdir)/utils/lua/host/compile`) and installs the wrapper into
+# staging_dir/host — all verified by reproduction. V=s and the build-log dump
+# are kept for diagnosis (the SDK's build wrapper hides failing commands).
 RUN if [ -d package/system/apk ]; then \
-        make package/system/apk/host/install -j"$(nproc)" V=s \
-        || { tail -n 50 logs/package/system/apk/host/install/* 2>/dev/null; \
+        make package/apk/host/compile -j"$(nproc)" V=s \
+        || { tail -n 50 logs/package/system/apk/host/* 2>/dev/null; \
              exit 1; }; \
     fi
 
