@@ -117,7 +117,7 @@ WORKDIR /builder/sdk-src
 # mkdir -p tmp: the target kconfig fragments (tmp/.kconfig-*) are written by
 # make rules that do not create tmp/ themselves; in a fresh clone their
 # writes can fail, which would silently drop target configuration.
-RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\n' \
+RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\nCONFIG_BUILDBOT=y\n' \
         "${TARGET}" "${TARGET}" "${SUBTARGET}" > .config \
     && mkdir -p tmp \
     && make defconfig
@@ -172,16 +172,18 @@ RUN make tools/install toolchain/install -j"$(nproc)"
 RUN if [ -d package/system/apk ]; then \
         make package/apk/host/compile -j"$(nproc)" V=s \
         || { tail -n 50 logs/package/system/apk/host/* 2>/dev/null; \
-             exit 1; }; \
+              exit 1; }; \
     fi
 
-# Align feeds.conf.default with the official openwrt/sdk images: the official
-# docker build pins the base feed line to the checked-out COMMIT, while the
-# release tree references the release TAG (;v25.12.5). Same revision, but the
-# commit form is what the pin-verification gates compare against, so a build
-# on either image must see the same reference. The opkg releases reference
-# their branch (;openwrt-22.03) in both images — untouched by this sed.
-RUN sed -i "s|\(https://git.openwrt.org/openwrt/openwrt\.git\);v[0-9][^ ]*|\1^$(git rev-parse HEAD)|" feeds.conf.default
+# The base feed line of the SDK's feeds.conf.default is REGENERATED from the
+# git metadata by target/sdk (the BASE_FEED variable): the official images
+# pin the checked-out COMMIT (^<sha>) because their buildbot config sets
+# CONFIG_BUILDBOT=y, while the plain release tree references the TAG
+# (;v25.12.5). Same revision, but the commit form is what the pin-
+# verification gates compare against — so CONFIG_BUILDBOT=y is seeded with
+# the target config above (a sed on feeds.conf.default would be overwritten
+# by the tarball generation, verified). The opkg releases reference their
+# branch (;openwrt-22.03) in both variants — untouched.
 
 # Kernel sources: only needed for kmod builds inside the SDK.
 RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/prepare -j"$(nproc)"; fi
