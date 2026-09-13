@@ -191,10 +191,13 @@ RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/prepare -j"$(nproc)"; 
 # package compile dies on its absence ("scripts/kconfig.pl: can't open
 # file .../linux-*/ .config", verified against the 25.12.5 image). The
 # official SDK images ship it from the buildbot's full build; this
-# recipe only prepared the sources, so the config step runs here
-# (oldconfig writes the OpenWrt kernel config and needs the prepared
-# kernel — the two steps share the BUILD_KMODS guard).
-RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/oldconfig -j"$(nproc)"; fi
+# recipe only prepared the sources, so the config step runs here. NOTE
+# the target name: `make target/linux/oldconfig` is NOT a resolvable
+# target (the SDK's %:: catch-all swallows it — "No rule"); the
+# canonical top-level `kernel_oldconfig` (toplevel.mk) runs the same
+# board oldconfig and its prerequisites (toolchain/install, quilt) are
+# already satisfied at this point.
+RUN if [ "${BUILD_KMODS}" = "1" ]; then make kernel_oldconfig -j"$(nproc)"; fi
 
 # Produce the SDK tarball:
 #   bin/targets/<board>/<subtarget>/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.zst  (25.12+)
