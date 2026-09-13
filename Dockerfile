@@ -158,8 +158,15 @@ RUN make tools/install toolchain/install -j"$(nproc)"
 # assemble ANY package ("fakeroot: /builder/staging_dir/host/bin/apk: No such
 # file or directory", verified against the 25.12.5 image). The tree carries
 # package/system/apk only on the apk-based releases; the opkg releases
-# (22.03) skip this. The lua host dependency resolves from the tree.
-RUN if [ -d package/system/apk ]; then make package/system/apk/host/install -j"$(nproc)"; fi
+# (22.03) skip this. The lua host dependency resolves from the tree. V=s:
+# the SDK build wraps failing commands in the build-log machinery that hides
+# the real error, so the verbose mode and a build-log dump are kept for
+# diagnosis.
+RUN if [ -d package/system/apk ]; then \
+        make package/system/apk/host/install -j"$(nproc)" V=s \
+        || { tail -n 50 logs/package/system/apk/host/install/* 2>/dev/null; \
+             exit 1; }; \
+    fi
 
 # Align feeds.conf.default with the official openwrt/sdk images: the official
 # docker build pins the base feed line to the checked-out COMMIT, while the
