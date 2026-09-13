@@ -181,7 +181,7 @@ RUN if [ -d package/system/apk ]; then \
 # commit form is what the pin-verification gates compare against, so a build
 # on either image must see the same reference. The opkg releases reference
 # their branch (;openwrt-22.03) in both images — untouched by this sed.
-RUN sed -i "s|\(https://github.com/openwrt/openwrt\.git\);v[0-9][^ ]*|\1^$(git rev-parse HEAD)|" feeds.conf.default
+RUN sed -i "s|\(https://git.openwrt.org/openwrt/openwrt\.git\);v[0-9][^ ]*|\1^$(git rev-parse HEAD)|" feeds.conf.default
 
 # Kernel sources: only needed for kmod builds inside the SDK.
 RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/prepare -j"$(nproc)"; fi
