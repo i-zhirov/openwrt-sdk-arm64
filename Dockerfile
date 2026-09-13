@@ -186,6 +186,16 @@ RUN sed -i "s|\(https://git.openwrt.org/openwrt/openwrt\.git\);v[0-9][^ ]*|\1^$(
 # Kernel sources: only needed for kmod builds inside the SDK.
 RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/prepare -j"$(nproc)"; fi
 
+# Generate the kernel .config: the SDK tarball carries it (the
+# target/sdk KERNEL_FILES whitelist includes .config), and the kernel
+# package compile dies on its absence ("scripts/kconfig.pl: can't open
+# file .../linux-*/ .config", verified against the 25.12.5 image). The
+# official SDK images ship it from the buildbot's full build; this
+# recipe only prepared the sources, so the config step runs here
+# (oldconfig writes the OpenWrt kernel config and needs the prepared
+# kernel — the two steps share the BUILD_KMODS guard).
+RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/oldconfig -j"$(nproc)"; fi
+
 # Produce the SDK tarball:
 #   bin/targets/<board>/<subtarget>/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.zst  (25.12+)
 #   bin/targets/<board>/<subtarget>/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.xz   (22.03)
