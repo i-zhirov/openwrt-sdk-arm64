@@ -65,6 +65,9 @@ The Dockerfile is multi-stage:
    `CONFIG_SDK=y` via `defconfig`, then runs:
    - `make tools/install toolchain/install` — host tools and the cross
      toolchain, both built for aarch64;
+   - on the apk-based releases (25.12+), `make package/system/apk/host/install`
+     — the host apk-tools the SDK needs to assemble `.apk` packages (see the
+     gotcha below);
    - `make target/linux/prepare` — kernel sources, so the SDK can build kmods
      (skip with `BUILD_KMODS=0`);
    - `make target/sdk/compile` — the SDK tarball
@@ -72,7 +75,11 @@ The Dockerfile is multi-stage:
 2. **Final stage**: the SDK is extracted into `/builder` (the official
    layout), the `gh-action-sdk` entrypoint is installed, and the buildbot user
    (uid 1000 — the gh-action-sdk contract) is created. No `setup.sh`: the SDK
-   is baked in, so the entrypoint skips its download-on-first-run step.
+   is baked in, so the entrypoint skips its download-on-first-run step. Like
+   the official images, the image carries **no `ENTRYPOINT`** (its `CMD` is
+   the official `["/bin/sh","-c","${CMD_ENV}"]`); the entrypoint is invoked
+   explicitly (`docker run IMAGE /entrypoint.sh`) or by the gh-action-sdk
+   wrapper, which sets its own `ENTRYPOINT`.
 
 ### Gotchas baked into the recipe (each verified by reproduction)
 
@@ -89,6 +96,18 @@ The Dockerfile is multi-stage:
   `defconfig` needs the target preselected non-interactively.
 - **`make target/sdk/compile`, not `make sdk`**: the bare `sdk` alias no
   longer exists in the OpenWrt tree ("No rule to make target 'sdk'").
+- **The host apk-tools must be baked in explicitly**: the SDK assembles
+  `.apk` packages with `staging_dir/host/bin/apk`, a PACKAGE host build
+  (`package/system/apk`) that a full image build runs automatically but this
+  recipe never did — the 25.12 SDK tarball then lacked it and the first
+  package build died with `fakeroot: .../bin/apk: No such file or directory`
+  (verified by reproduction). The official images ship it from the buildbot's
+  full build; here it is built before the SDK tarball is packed.
+- **`feeds.conf.default`'s base line is pinned to the commit**: the release
+  tree references the release tag (`;v25.12.5`), while the official SDK
+  images pin the checked-out commit (`^f0a60eee…`). Same revision, but the
+  commit form is what the pin-verification gates compare against, so the
+  builder rewrites the tag reference to the checked-out commit.
 - **`bin/targets/<board>/<subtarget>/`**: the SDK tarball lands in the
   per-target output directory (`BIN_DIR`), not `bin/`.
 - **uid 1000**: Ubuntu's base image already owns it (the `ubuntu` user), so
@@ -101,12 +120,15 @@ The Dockerfile is multi-stage:
 ```sh
 docker pull ghcr.io/i-zhirov/openwrt-sdk-arm64:25.12.5
 
+# Like the official openwrt/sdk images, the image carries no ENTRYPOINT —
+# gh-action-sdk's wrapper adds it — so the baked entrypoint is invoked
+# explicitly.
 docker run --rm \
   -e PACKAGES=urngd \
   -e FEEDNAME=myfeed \
   -v "$PWD:/feed" \
   -v "$PWD/out:/artifacts" \
-  ghcr.io/i-zhirov/openwrt-sdk-arm64:25.12.5
+  ghcr.io/i-zhirov/openwrt-sdk-arm64:25.12.5 /entrypoint.sh
 ```
 
 The built packages land in `out/bin`. Requires an arm64 Docker daemon

@@ -150,6 +150,25 @@ RUN assert_target() { \
 # an hour on a 4-core arm64.
 RUN make tools/install toolchain/install -j"$(nproc)"
 
+# The apk-based SDKs (25.12+) assemble .apk packages with the HOST apk-tools,
+# which is a package host build (package/system/apk). A full image build runs
+# it automatically as a dependency of package/compile — that is how the
+# official SDK images come to ship staging_dir/host/bin/apk. This recipe
+# builds no packages, so without an explicit host build the SDK cannot
+# assemble ANY package ("fakeroot: /builder/staging_dir/host/bin/apk: No such
+# file or directory", verified against the 25.12.5 image). The tree carries
+# package/system/apk only on the apk-based releases; the opkg releases
+# (22.03) skip this. The lua host dependency resolves from the tree.
+RUN if [ -d package/system/apk ]; then make package/system/apk/host/install -j"$(nproc)"; fi
+
+# Align feeds.conf.default with the official openwrt/sdk images: the official
+# docker build pins the base feed line to the checked-out COMMIT, while the
+# release tree references the release TAG (;v25.12.5). Same revision, but the
+# commit form is what the pin-verification gates compare against, so a build
+# on either image must see the same reference. The opkg releases reference
+# their branch (;openwrt-22.03) in both images — untouched by this sed.
+RUN sed -i "s|\(https://github.com/openwrt/openwrt\.git\);v[0-9][^ ]*|\1^$(git rev-parse HEAD)|" feeds.conf.default
+
 # Kernel sources: only needed for kmod builds inside the SDK.
 RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/prepare -j"$(nproc)"; fi
 
@@ -218,5 +237,13 @@ LABEL org.opencontainers.image.description="OpenWrt SDK built natively for aarch
 LABEL org.opencontainers.image.version="${OPENWRT_REF}"
 LABEL org.opencontainers.image.source="https://github.com/i-zhirov/openwrt-sdk-arm64"
 
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/bin/bash"]
+# The official openwrt/sdk images carry NO entrypoint — their CMD is
+# ["/bin/sh","-c","${CMD_ENV}"] — and gh-action-sdk's own Dockerfile wraps
+# the base image and sets ENTRYPOINT ["/entrypoint.sh"] there. Baking the
+# entrypoint here deviated from that contract and hijacked plain
+# `docker run IMAGE <cmd>` invocations (verified: an arm64 image swallowed
+# `sh -c '...'` payloads, the official image runs them). The image now
+# matches the official one exactly: the entrypoint script stays installed
+# and is invoked explicitly (`docker run IMAGE /entrypoint.sh`) or by the
+# gh-action-sdk wrapper.
+CMD ["/bin/sh","-c","${CMD_ENV}"]

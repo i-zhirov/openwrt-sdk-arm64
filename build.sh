@@ -182,13 +182,15 @@ if [ "$SMOKE" = 1 ]; then
     echo "== smoke test: building $PKG with $IMG"
     # Same interface gh-action-sdk uses: the feed is the whole repository
     # (absolute path — a relative one would be treated as a docker VOLUME
-    # NAME and arrive empty), the artifacts land in out/.
+    # NAME and arrive empty), the artifacts land in out/. The entrypoint
+    # is invoked explicitly: like the official openwrt/sdk images, this
+    # image carries no ENTRYPOINT (the gh-action-sdk wrapper adds it).
     docker run --rm \
         -e PACKAGES="$PKG" \
         -e FEEDNAME=myfeed \
         -v "$(pwd):/feed" \
         -v "$(pwd)/out:/artifacts" \
-        "$IMG"
+        "$IMG" /entrypoint.sh
 
     if find out/bin -name "$PKG*" | grep -q .; then
         echo "== smoke test ok:"
