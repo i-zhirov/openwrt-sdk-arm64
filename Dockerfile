@@ -73,9 +73,11 @@ ARG ACTION_REF
 
 # The apt package set (OpenWrt build guide's Debian list plus what the SDK
 # needs at runtime: it compiles packages against the included toolchain).
+# libelf-dev and bc are the kernel build's own host dependencies (objtool
+# and timeconst) — verified by reproduction against the direct build.
 # An ENV, not an ARG: multi-word values in ARG defaults are parsed
 # unreliably, and the set is not meant to be overridden.
-ENV BUILD_DEPS="build-essential ccache curl file flex bison gawk gettext git ca-certificates libncurses-dev libssl-dev python3 python3-setuptools python3-pyelftools python3-cryptography rsync subversion swig unzip wget xz-utils zstd time locales zlib1g-dev"
+ENV BUILD_DEPS="build-essential ccache curl file flex bison gawk gettext git ca-certificates libncurses-dev libssl-dev python3 python3-setuptools python3-pyelftools python3-cryptography rsync subversion swig unzip wget xz-utils zstd time locales zlib1g-dev libelf-dev bc"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
@@ -198,25 +200,37 @@ RUN if [ -d package/system/apk ]; then \
 # not whitelisted into the tarball, only the headers/module artifacts
 # ride along).
 #
-# The kernel config step prompts are answered with the defaults
-# (`yes "" |`; the kconfig conf reads stdin for symbols not covered by
-# the OpenWrt fragments and dies on docker's /dev/null stdin), and the
-# kernel is then built DIRECTLY (make -C into the kernel dir with the
-# arch and cross prefix from the config): the OpenWrt
-# target/linux/compile machinery wraps the kernel build in silent
-# wrappers and fails on the runners with no visible error (the kconfig
-# syncconfig dying after the config write — verified across several
-# runner builds, never reproduced locally where the direct build
-# passes). The direct build produces the artifacts the SDK tarball
-# whitelists (modules.builtin, Module.symvers, the .ko files) with
-# visible output. The three steps run in a retry loop with the kernel
-# build dir cleaned between attempts.
+# The kernel is built DIRECTLY (make -C into the kernel dir with the arch
+# and cross prefix from the config): the OpenWrt target/linux/compile
+# machinery wraps the kernel build in silent wrappers and fails on the
+# runners with no visible error (the kconfig syncconfig dying after the
+# config write — verified across several runner builds, never reproduced
+# locally where the direct build passes). The direct build produces the
+# artifacts the SDK tarball whitelists (modules.builtin, Module.symvers,
+# the .ko files) with visible output.
+#
+# The config is generated with the Configure flow's own steps, NOT
+# kernel_oldconfig: the fragments alone enable NO =m symbols, so the
+# module packages would have nothing to package. The Configure flow
+# merges the fragments with the OpenWrt config's kernel settings
+# (CONFIG_KERNEL_*), the kmod overrides (package-metadata kconfig — the
+# CONFIG_PACKAGE_kmod-* symbols map to kernel =m symbols) and the
+# KALLSYMS defaults, producing the .config.set that the kernel build and
+# the SDK's own Configure flow would use. The prompts of the oldconfig
+# path are avoided entirely (the config is complete after the merge);
+# the direct kernel make still gets `yes "" |` for any residual
+# question, and the kconfig compiler check needs the cross toolchain on
+# an ABSOLUTE PATH (relative entries break when the kernel make changes
+# into the build dir — verified by reproduction). The vermagic is
+# generated from the final config: the kernel package version embeds it
+# (6.12.94~<hash>-r1) and apk rejects the literal "unknown" fallback.
+# The three steps run in a retry loop with the kernel build dir cleaned
+# between attempts.
 RUN if [ "${BUILD_KMODS}" = "1" ]; then \
         _attempt=0; \
         while [ "$_attempt" -lt 3 ]; do \
             _attempt=$((_attempt + 1)); \
-            if make target/linux/prepare -j"$(nproc)" \
-                && yes "" | make kernel_oldconfig -j"$(nproc)"; then \
+            if make target/linux/prepare -j"$(nproc)"; then \
                 _KDIR=$(ls -d build_dir/target-*/linux-*/linux-* | head -1); \
                 _ARCH=$(sed -n 's/^CONFIG_ARCH="\(.*\)"/\1/p' .config); \
                 case " $_ARCH " in \
@@ -233,33 +247,35 @@ RUN if [ "${BUILD_KMODS}" = "1" ]; then \
                 esac; \
                 _CROSS=$(ls staging_dir/toolchain-*/bin/*musl*-gcc 2>/dev/null | head -1 | sed 's|.*/||; s|-gcc$||'); \
                 [ -n "$_CROSS" ] || _CROSS=$(ls staging_dir/toolchain-*/bin/*-gcc 2>/dev/null | head -1 | sed 's|.*/||; s|-gcc$||'); \
-                if [ -n "$_KDIR" ] && [ -n "$_KARCH" ] && [ -n "$_CROSS" ]; then \
-                    echo "== direct kernel build (attempt $_attempt): arch=$_KARCH cross=$_CROSS"; \
-                    # Absolute PATH entries: the kernel make changes into \
-                    # the kernel build dir, where RELATIVE staging paths \
-                    # no longer resolve — the kconfig compiler check \
-                    # ("command -v \$(CC)") then dies with "C compiler ... \
-                    # not found" (verified by reproduction). \
+                _BOARD=$(sed -n 's/^CONFIG_TARGET_BOARD="\(.*\)"/\1/p' .config); \
+                _TSUB=$(sed -n 's/^CONFIG_TARGET_SUBTARGET="\(.*\)"/\1/p' .config); \
+                _PATCHVER=$(grep -m1 "^KERNEL_PATCHVER:=" "target/linux/$_BOARD/Makefile" 2>/dev/null | cut -d= -f2); \
+                if [ -n "$_KDIR" ] && [ -n "$_KARCH" ] && [ -n "$_CROSS" ] && [ -n "$_PATCHVER" ]; then \
+                    echo "== kernel config + direct build (attempt $_attempt): arch=$_KARCH cross=$_CROSS patchver=$_PATCHVER"; \
                     _TBIN=$(ls -d "$PWD"/staging_dir/toolchain-*/bin | head -1); \
                     _HBIN=$(ls -d "$PWD"/staging_dir/host/bin | head -1); \
                     export PATH="$_TBIN:$_HBIN:$PATH"; \
+                    _FRAGS=$(ls target/linux/generic/config-$_PATCHVER \
+                        "target/linux/$_BOARD/config-$_PATCHVER" \
+                        "target/linux/$_BOARD/$_TSUB/config-$_PATCHVER" 2>/dev/null); \
+                    scripts/kconfig.pl + $_FRAGS > "$_KDIR/.config.target"; \
+                    awk '/^(#[[:space:]]+)?CONFIG_KERNEL/{sub("CONFIG_KERNEL_","CONFIG_");print}' .config >> "$_KDIR/.config.target"; \
+                    echo "# CONFIG_KALLSYMS_EXTRA_PASS is not set" >> "$_KDIR/.config.target"; \
+                    echo "# CONFIG_KALLSYMS_ALL is not set" >> "$_KDIR/.config.target"; \
+                    echo "CONFIG_KALLSYMS_UNCOMPRESSED=y" >> "$_KDIR/.config.target"; \
+                    scripts/package-metadata.pl kconfig tmp/.packageinfo .config "$_PATCHVER" > "$_KDIR/.config.override"; \
+                    scripts/kconfig.pl 'm+' '+' "$_KDIR/.config.target" /dev/null "$_KDIR/.config.override" > "$_KDIR/.config.set"; \
+                    cp "$_KDIR/.config.set" "$_KDIR/.config"; \
+                    grep '=[ym]' "$_KDIR/.config" | LC_ALL=C sort | "$_HBIN/mkhash" md5 > "$_KDIR/.vermagic"; \
                     if yes "" | make -C "$_KDIR" ARCH="$_KARCH" CROSS_COMPILE="$_CROSS-" -j"$(nproc)" all modules > /tmp/kb.log 2>&1; then \
-                        # The kernel package version embeds the vermagic \
-                        # (6.12.94~<hash>-r1); the Configure flow normally \
-                        # regenerates .vermagic from the config, but apk \
-                        # rejects the literal "unknown" fallback (verified \
-                        # against apk-tools 3.0.5), so it is generated here \
-                        # and carried into the tarball (see the whitelist \
-                        # patch below). \
-                        grep '=[ym]' "$_KDIR/.config" | LC_ALL=C sort | "$_HBIN/mkhash" md5 > "$_KDIR/.vermagic"; \
                         break; \
                     fi; \
                     tail -n 30 /tmp/kb.log; \
                 else \
-                    echo "kernel dir/arch/cross not found" >&2; \
+                    echo "kernel dir/arch/cross/patchver not found" >&2; \
                 fi; \
             else \
-                echo "kernel prepare/config attempt $_attempt failed" >&2; \
+                echo "kernel prepare attempt $_attempt failed" >&2; \
             fi; \
             echo "kernel build attempt $_attempt failed; cleaning and retrying" >&2; \
             rm -rf build_dir/target-*/linux-*/linux-*; \
