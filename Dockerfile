@@ -198,30 +198,62 @@ RUN if [ -d package/system/apk ]; then \
 # not whitelisted into the tarball, only the headers/module artifacts
 # ride along).
 #
-# The config/compile steps intermittently fail on the CI runners — the
-# kernel's kconfig `conf` dies with "Error in reading or end of file."
-# when a config symbol not covered by the OpenWrt fragments triggers an
-# interactive prompt: in a docker build, stdin is /dev/null, so the
-# prompt's fgets() fails instantly (verified ~1 in 2 runner builds,
-# never reproduced locally with a terminal). The prompts are answered
-# with the defaults (`yes "" |`) and the three steps run in a retry
-# loop with the kernel build dir cleaned between attempts. The compile
-# runs with V=1 (the OpenWrt wrappers force V=s and swallow the kernel
-# build's errors; V=1 keeps stderr visible in the captured log) and the
-# log tail is dumped on failure.
+# The kernel config step prompts are answered with the defaults
+# (`yes "" |`; the kconfig conf reads stdin for symbols not covered by
+# the OpenWrt fragments and dies on docker's /dev/null stdin), and the
+# kernel is then built DIRECTLY (make -C into the kernel dir with the
+# arch and cross prefix from the config): the OpenWrt
+# target/linux/compile machinery wraps the kernel build in silent
+# wrappers and fails on the runners with no visible error (the kconfig
+# syncconfig dying after the config write — verified across several
+# runner builds, never reproduced locally where the direct build
+# passes). The direct build produces the artifacts the SDK tarball
+# whitelists (modules.builtin, Module.symvers, the .ko files) with
+# visible output. The three steps run in a retry loop with the kernel
+# build dir cleaned between attempts.
 RUN if [ "${BUILD_KMODS}" = "1" ]; then \
         _attempt=0; \
         while [ "$_attempt" -lt 3 ]; do \
             _attempt=$((_attempt + 1)); \
             if make target/linux/prepare -j"$(nproc)" \
                 && yes "" | make kernel_oldconfig -j"$(nproc)"; then \
-                echo "== kernel compile (attempt $_attempt)"; \
-                if yes "" | make V=1 target/linux/compile -j"$(nproc)" > /tmp/kc.log 2>&1; then \
-                    break; \
+                _KDIR=$(ls -d build_dir/target-*/linux-*/linux-* | head -1); \
+                _ARCH=$(sed -n 's/^CONFIG_ARCH="\(.*\)"/\1/p' .config); \
+                case " $_ARCH " in \
+                    *" aarch64 "*|*" aarch64_be "*) _KARCH=arm64 ;; \
+                    *" arceb "*) _KARCH=arc ;; \
+                    *" armeb "*) _KARCH=arm ;; \
+                    *" loongarch64 "*) _KARCH=loongarch ;; \
+                    *" mipsel "*|*" mips64 "*|*" mips64el "*) _KARCH=mips ;; \
+                    *" powerpc64 "*) _KARCH=powerpc ;; \
+                    *" riscv64 "*) _KARCH=riscv ;; \
+                    *" sh2 "*|*" sh3 "*|*" sh4 "*) _KARCH=sh ;; \
+                    *" i386 "*|*" x86_64 "*) _KARCH=x86 ;; \
+                    *) _KARCH=$_ARCH ;; \
+                esac; \
+                _CROSS=$(ls staging_dir/toolchain-*/bin/*musl*-gcc 2>/dev/null | head -1 | sed 's|.*/||; s|-gcc$||'); \
+                [ -n "$_CROSS" ] || _CROSS=$(ls staging_dir/toolchain-*/bin/*-gcc 2>/dev/null | head -1 | sed 's|.*/||; s|-gcc$||'); \
+                if [ -n "$_KDIR" ] && [ -n "$_KARCH" ] && [ -n "$_CROSS" ]; then \
+                    echo "== direct kernel build (attempt $_attempt): arch=$_KARCH cross=$_CROSS"; \
+                    # Absolute PATH entries: the kernel make changes into \
+                    # the kernel build dir, where RELATIVE staging paths \
+                    # no longer resolve — the kconfig compiler check \
+                    # ("command -v \$(CC)") then dies with "C compiler ... \
+                    # not found" (verified by reproduction). \
+                    _TBIN=$(ls -d "$PWD"/staging_dir/toolchain-*/bin | head -1); \
+                    _HBIN=$(ls -d "$PWD"/staging_dir/host/bin | head -1); \
+                    export PATH="$_TBIN:$_HBIN:$PATH"; \
+                    if yes "" | make -C "$_KDIR" ARCH="$_KARCH" CROSS_COMPILE="$_CROSS-" -j"$(nproc)" all modules > /tmp/kb.log 2>&1; then \
+                        break; \
+                    fi; \
+                    tail -n 30 /tmp/kb.log; \
+                else \
+                    echo "kernel dir/arch/cross not found" >&2; \
                 fi; \
+            else \
+                echo "kernel prepare/config attempt $_attempt failed" >&2; \
             fi; \
             echo "kernel build attempt $_attempt failed; cleaning and retrying" >&2; \
-            tail -n 40 /tmp/kc.log 2>/dev/null; \
             rm -rf build_dir/target-*/linux-*/linux-*; \
         done; \
         [ "$_attempt" -lt 3 ] || exit 1; \
