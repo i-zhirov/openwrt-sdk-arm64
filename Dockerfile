@@ -266,14 +266,15 @@ RUN if [ "${BUILD_KMODS}" = "1" ]; then \
                     scripts/package-metadata.pl kconfig tmp/.packageinfo .config "$_PATCHVER" > "$_KDIR/.config.override"; \
                     scripts/kconfig.pl 'm+' '+' "$_KDIR/.config.target" /dev/null "$_KDIR/.config.override" > "$_KDIR/.config.set"; \
                     # The official SDK kernel config builds the base support \
-                    # symbols IN (=y — verified by diffing the official \
-                    # image's kernel config against the generated one): \
-                    # SCSI/ATA/PHY/zlib etc. Their =m form leaves the module \
-                    # modinfo with dependency references (e.g. libsas.ko → \
-                    # libata, scsi_mod, scsi_common), which the SDK use-time \
-                    # dependency check rejects because the referenced .ko are \
-                    # packaged elsewhere. \
-                    sed -i -E 's/^CONFIG_(ACPI_MDIO|BLK_DEV_LOOP|BLK_DEV_SD|BLK_DEV_SR|CRC16|CRYPTO_CRC32C|FS_MBCACHE|HWMON_VID|HYPERV_KEYBOARD|HYPERV_STORAGE|I2C_ALGOBIT|JBD2|MDIO_BUS|MDIO_DEVICE|MDIO_DEVRES|MFD_CORE|NET_SELFTESTS|PHYLIB|SCSI_COMMON|SCSI_MOD|SCSI_SAS_ATTRS|SCSI_VIRTIO|SENSORS_CORETEMP|SENSORS_VIA_CPUTEMP|SERIO_I8042|SERIO_LIBPS2|XEN_SCSI_FRONTEND|ZLIB_DEFLATE|ZLIB_INFLATE)=m$/CONFIG_\1=y/' "$_KDIR/.config.set"; \
+                    # symbols IN (=y — the full set derived with LC_ALL=C \
+                    # from diffing the official image's kernel config \
+                    # against the generated one): SCSI/ATA/PHY/EXT4/zlib \
+                    # etc. Their =m form leaves the module modinfo with \
+                    # dependency references (e.g. libsas.ko → libata, \
+                    # scsi_mod, scsi_common), which the SDK use-time \
+                    # dependency check rejects because the referenced .ko \
+                    # are packaged elsewhere. \
+                    sed -i -E 's/^CONFIG_(ACPI_MDIO|ATA|BLK_DEV_LOOP|BLK_DEV_SD|BLK_DEV_SR|CRC16|CRYPTO_CRC32|CRYPTO_CRC32C|EXT4_FS|F2FS_FS|FIXED_PHY|FS_MBCACHE|FWNODE_MDIO|HWMON|HWMON_VID|HYPERV_KEYBOARD|HYPERV_STORAGE|I2C_ALGOBIT|JBD2|MDIO_BUS|MDIO_DEVICE|MDIO_DEVRES|MFD_CORE|NET_SELFTESTS|PHYLIB|SCSI|SCSI_COMMON|SCSI_MOD|SCSI_SAS_ATTRS|SCSI_VIRTIO|SENSORS_CORETEMP|SENSORS_VIA_CPUTEMP|SERIO|SERIO_I8042|SERIO_LIBPS2|XEN_SCSI_FRONTEND|ZLIB_DEFLATE|ZLIB_INFLATE)=m$/CONFIG_\1=y/' "$_KDIR/.config.set"; \
                     cp "$_KDIR/.config.set" "$_KDIR/.config"; \
                     grep '=[ym]' "$_KDIR/.config" | LC_ALL=C sort | "$_HBIN/mkhash" md5 > "$_KDIR/.vermagic"; \
                     if yes "" | make -C "$_KDIR" ARCH="$_KARCH" CROSS_COMPILE="$_CROSS-" -j"$(nproc)" all modules > /tmp/kb.log 2>&1; then \
