@@ -205,17 +205,23 @@ RUN if [ -d package/system/apk ]; then \
 # prompt's fgets() fails instantly (verified ~1 in 2 runner builds,
 # never reproduced locally with a terminal). The prompts are answered
 # with the defaults (`yes "" |`) and the three steps run in a retry
-# loop with the kernel build dir cleaned between attempts.
+# loop with the kernel build dir cleaned between attempts. The compile
+# runs with V=1 (the OpenWrt wrappers force V=s and swallow the kernel
+# build's errors; V=1 keeps stderr visible in the captured log) and the
+# log tail is dumped on failure.
 RUN if [ "${BUILD_KMODS}" = "1" ]; then \
         _attempt=0; \
         while [ "$_attempt" -lt 3 ]; do \
             _attempt=$((_attempt + 1)); \
             if make target/linux/prepare -j"$(nproc)" \
-                && yes "" | make kernel_oldconfig -j"$(nproc)" \
-                && yes "" | make target/linux/compile -j"$(nproc)"; then \
-                break; \
+                && yes "" | make kernel_oldconfig -j"$(nproc)"; then \
+                echo "== kernel compile (attempt $_attempt)"; \
+                if yes "" | make V=1 target/linux/compile -j"$(nproc)" > /tmp/kc.log 2>&1; then \
+                    break; \
+                fi; \
             fi; \
             echo "kernel build attempt $_attempt failed; cleaning and retrying" >&2; \
+            tail -n 40 /tmp/kc.log 2>/dev/null; \
             rm -rf build_dir/target-*/linux-*/linux-*; \
         done; \
         [ "$_attempt" -lt 3 ] || exit 1; \
