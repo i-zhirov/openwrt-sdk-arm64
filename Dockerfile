@@ -199,17 +199,20 @@ RUN if [ -d package/system/apk ]; then \
 # ride along).
 #
 # The config/compile steps intermittently fail on the CI runners — the
-# kconfig conf dying with "Error in reading or end of file." when
-# reading the freshly written .config (observed ~1 in 2 runner builds,
-# never reproduced locally) — so the three steps run in a retry loop
-# with the kernel build dir cleaned between attempts.
+# kernel's kconfig `conf` dies with "Error in reading or end of file."
+# when a config symbol not covered by the OpenWrt fragments triggers an
+# interactive prompt: in a docker build, stdin is /dev/null, so the
+# prompt's fgets() fails instantly (verified ~1 in 2 runner builds,
+# never reproduced locally with a terminal). The prompts are answered
+# with the defaults (`yes "" |`) and the three steps run in a retry
+# loop with the kernel build dir cleaned between attempts.
 RUN if [ "${BUILD_KMODS}" = "1" ]; then \
         _attempt=0; \
         while [ "$_attempt" -lt 3 ]; do \
             _attempt=$((_attempt + 1)); \
             if make target/linux/prepare -j"$(nproc)" \
-                && make kernel_oldconfig -j"$(nproc)" \
-                && make target/linux/compile -j"$(nproc)"; then \
+                && yes "" | make kernel_oldconfig -j"$(nproc)" \
+                && yes "" | make target/linux/compile -j"$(nproc)"; then \
                 break; \
             fi; \
             echo "kernel build attempt $_attempt failed; cleaning and retrying" >&2; \
