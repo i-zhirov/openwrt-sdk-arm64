@@ -244,6 +244,14 @@ RUN if [ "${BUILD_KMODS}" = "1" ]; then \
                     _HBIN=$(ls -d "$PWD"/staging_dir/host/bin | head -1); \
                     export PATH="$_TBIN:$_HBIN:$PATH"; \
                     if yes "" | make -C "$_KDIR" ARCH="$_KARCH" CROSS_COMPILE="$_CROSS-" -j"$(nproc)" all modules > /tmp/kb.log 2>&1; then \
+                        # The kernel package version embeds the vermagic \
+                        # (6.12.94~<hash>-r1); the Configure flow normally \
+                        # regenerates .vermagic from the config, but apk \
+                        # rejects the literal "unknown" fallback (verified \
+                        # against apk-tools 3.0.5), so it is generated here \
+                        # and carried into the tarball (see the whitelist \
+                        # patch below). \
+                        grep '=[ym]' "$_KDIR/.config" | LC_ALL=C sort | "$_HBIN/mkhash" md5 > "$_KDIR/.vermagic"; \
                         break; \
                     fi; \
                     tail -n 30 /tmp/kb.log; \
@@ -265,6 +273,18 @@ RUN if [ "${BUILD_KMODS}" = "1" ]; then \
 # BIN_DIR is bin/targets/<board>/<subtarget> (rules.mk), hence the nested
 # path in the COPY below.
 #
+# Two patches to the SDK packaging:
+# - the WHOLE kernel build dir rides into the tarball (KDIR_BASE): the
+#   stock target/sdk whitelist (KERNEL_FILES) ships only selected files,
+#   while the official SDK images carry the full kernel source, which the
+#   kernel package compile at SDK use time needs (verified by comparing
+#   the images); the whitelist alone leaves the use-time compile unable
+#   to run the kernel make inside the build dir.
+# - .vermagic is added to the whitelist (KERNEL_FILES_BASE): the kernel
+#   package version embeds it, apk rejects the literal "unknown"
+#   fallback, and the Configure flow that would regenerate it does not
+#   run before the version is evaluated in a fresh SDK.
+#
 # NOTE: it is `target/sdk/compile`, NOT `make sdk`: the bare `sdk` alias no
 # longer exists in the OpenWrt tree (verified against v25.12.5 — the top-level
 # make fails with "No rule to make target 'sdk'"). The SDK is packed from
@@ -273,6 +293,8 @@ RUN if [ "${BUILD_KMODS}" = "1" ]; then \
 # first. CONFIG_SDK=y (seeded above) makes target/sdk part of the official
 # `make target/install` flow and matches the buildbot's config; it is not
 # strictly required for the standalone compile target.
+RUN sed -i "/^KERNEL_FILES_BASE := \\\\\$/a\\\\t.vermagic \\\\" target/sdk/Makefile \
+    && sed -i "s|\$(SDK_DIRS) \$(KERNEL_FILES)|\$(SDK_DIRS) \$(KDIR_BASE) \$(KERNEL_FILES)|" target/sdk/Makefile
 RUN make target/sdk/compile
 
 # ---------------------------------------------------------------------------
