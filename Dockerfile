@@ -185,32 +185,38 @@ RUN if [ -d package/system/apk ]; then \
 # by the tarball generation, verified). The opkg releases reference their
 # branch (;openwrt-22.03) in both variants — untouched.
 
-# Kernel sources: only needed for kmod builds inside the SDK.
-RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/prepare -j"$(nproc)"; fi
-
-# Generate the kernel .config: the SDK tarball carries it (the
-# target/sdk KERNEL_FILES whitelist includes .config), and the kernel
-# package compile dies on its absence ("scripts/kconfig.pl: can't open
-# file .../linux-*/ .config", verified against the 25.12.5 image). The
-# official SDK images ship it from the buildbot's full build; this
-# recipe only prepared the sources, so the config step runs here. NOTE
-# the target name: `make target/linux/oldconfig` is NOT a resolvable
-# target (the SDK's %:: catch-all swallows it — "No rule"); the
-# canonical top-level `kernel_oldconfig` (toplevel.mk) runs the same
-# board oldconfig and its prerequisites (toolchain/install, quilt) are
-# already satisfied at this point.
-RUN if [ "${BUILD_KMODS}" = "1" ]; then make kernel_oldconfig -j"$(nproc)"; fi
-
-# Compile the kernel: the SDK tarball whitelists the kernel BUILD OUTPUT
-# (modules.builtin, Module.symvers, the compiled *.ko modules — the
-# target/sdk KERNEL_FILES list), and the kernel package compile in the
-# SDK dies on their absence ("install: cannot stat
-# .../linux-*/.config/modules.builtin", verified against the 25.12.5
-# image). The official SDK images ship them from the buildbot's full
-# build; this recipe only prepared and configured the sources, so the
-# kernel is compiled here (the image itself is not whitelisted into the
-# tarball, so only the headers/module artifacts ride along).
-RUN if [ "${BUILD_KMODS}" = "1" ]; then make target/linux/compile -j"$(nproc)"; fi
+# Kernel sources + config + build: the SDK tarball whitelists the kernel
+# BUILD output (modules.builtin, Module.symvers, the compiled *.ko
+# modules — the target/sdk KERNEL_FILES list), and the kernel package
+# compile in the SDK dies on their absence (verified against the 25.12.5
+# image: first missing .config — "scripts/kconfig.pl: can't open file",
+# then missing modules.builtin). The official SDK images ship them from
+# the buildbot's full build; this recipe only prepared the sources, so
+# the kernel is configured (kernel_oldconfig — the canonical top-level
+# target; `make target/linux/oldconfig` is NOT resolvable, the SDK's %::
+# catch-all swallows it) and compiled here (the kernel image itself is
+# not whitelisted into the tarball, only the headers/module artifacts
+# ride along).
+#
+# The config/compile steps intermittently fail on the CI runners — the
+# kconfig conf dying with "Error in reading or end of file." when
+# reading the freshly written .config (observed ~1 in 2 runner builds,
+# never reproduced locally) — so the three steps run in a retry loop
+# with the kernel build dir cleaned between attempts.
+RUN if [ "${BUILD_KMODS}" = "1" ]; then \
+        _attempt=0; \
+        while [ "$_attempt" -lt 3 ]; do \
+            _attempt=$((_attempt + 1)); \
+            if make target/linux/prepare -j"$(nproc)" \
+                && make kernel_oldconfig -j"$(nproc)" \
+                && make target/linux/compile -j"$(nproc)"; then \
+                break; \
+            fi; \
+            echo "kernel build attempt $_attempt failed; cleaning and retrying" >&2; \
+            rm -rf build_dir/target-*/linux-*/linux-*; \
+        done; \
+        [ "$_attempt" -lt 3 ] || exit 1; \
+    fi
 
 # Produce the SDK tarball:
 #   bin/targets/<board>/<subtarget>/openwrt-sdk-<version>-<target>_gcc-<ver>_musl.Linux-aarch64.tar.zst  (25.12+)
