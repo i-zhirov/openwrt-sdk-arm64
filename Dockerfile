@@ -119,7 +119,7 @@ WORKDIR /builder/sdk-src
 # mkdir -p tmp: the target kconfig fragments (tmp/.kconfig-*) are written by
 # make rules that do not create tmp/ themselves; in a fresh clone their
 # writes can fail, which would silently drop target configuration.
-RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\nCONFIG_BUILDBOT=y\n' \
+RUN printf 'CONFIG_TARGET_%s=y\nCONFIG_TARGET_%s_%s=y\nCONFIG_SDK=y\nCONFIG_BUILDBOT=y\nCONFIG_ALL_KMODS=y\n' \
         "${TARGET}" "${TARGET}" "${SUBTARGET}" > .config \
     && mkdir -p tmp \
     && make defconfig
